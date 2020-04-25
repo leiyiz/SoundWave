@@ -26,9 +26,7 @@ class MainActivity : AppCompatActivity() {
     private val sampleRate = 44100
     private val numSamples = duration * sampleRate
 
-    //    private val sample = DoubleArray(numSamples)
     private val frequency = 18500 //Hz
-//    private val sound = ByteArray(2 * numSamples)
 
     private val shortSample = ShortArray(numSamples)
 
@@ -84,7 +82,7 @@ class MainActivity : AppCompatActivity() {
                 y[i] = 0.0
             }
 
-            transformer.fft(x, y)
+            transformer.transform(x, y)
 
             //TODO: original does not have sqrt
             for (i in p.indices) p[i] = sqrt(x[i /*+ p.size*/].pow(2) + y[i /*+ p.size*/].pow(2))
@@ -153,8 +151,6 @@ class MainActivity : AppCompatActivity() {
             }
 
         if (!bandwidthInit) {
-//            bandLeftBase = lband
-//            bandRightBase = rband
             bandLeftBase = 4
             bandRightBase = 5
             bandwidthInit = true
@@ -162,21 +158,11 @@ class MainActivity : AppCompatActivity() {
             Log.d("bandRightBase", bandRightBase.toString())
         }
         var res = NONE
-//        if (lband != 0)
-//            Log.d("lband_info", lband.toString())
-//        if (rband != 0)
-//            Log.d("rband_info", rband.toString())
         if (lband > bandLeftBase || lPeak) {
             res = LEFT
-//        } else {
-//            bandLeftBase = lband
-//            Log.d("bandLeftBase", bandLeftBase.toString())
         }
         if (rband > bandRightBase || rPeak) {
             res = RIGHT
-//        } else {
-//            bandRightBase = rband
-//            Log.d("bandRightBase", bandRightBase.toString())
         }
 
         val freq = when {
@@ -212,21 +198,6 @@ class MainActivity : AppCompatActivity() {
             .setBufferSizeInBytes(2 * minSize)
             .build()
     }
-
-//    fun genToneIncorrect() { // fill out the array
-//        for (i in 0 until numSamples) {
-//            sample[i] = sin(2 * PI * i / (sampleRate / frequency))
-//        }
-//        // convert to 16 bit pcm sound array
-//        // assumes the sample buffer is normalised.
-//        var idx = 0
-//        for (dVal in sample) { // scale to maximum amplitude
-//            val `val` = (dVal * Short.MAX_VALUE).toShort()
-//            // in 16 bit wav PCM, first byte is the low order byte
-//            sound[idx++] = (`val`.toInt() and 0x00ff).toByte()
-//            sound[idx++] = (`val`.toInt() and 0xff00 ushr 8).toByte()
-//        }
-//    }
 
     fun genTone() {
         var angle = 0.0
@@ -271,59 +242,23 @@ class MainActivity : AppCompatActivity() {
 }
 
 
-class FFT(var n: Int) {
-    var m: Int
+class FFT(private var size: Int) {
+    private var power: Int = (ln(size.toDouble()) / ln(2.0)).toInt()
 
-    // Lookup tables.  Only need to recompute when size of FFT changes.
-    var cos: DoubleArray
-    var sin: DoubleArray
-    var window: DoubleArray
+    private var cos: DoubleArray
+    private var sin: DoubleArray
+    private var window: DoubleArray
 
-//    protected fun makeWindow() {
-//        // Make a blackman window:
-//        // w(n)=0.42-0.5cos{(2*PI*n)/(N-1)}+0.08cos{(4*PI*n)/(N-1)};
-//        window = DoubleArray(n)
-//        for (i in window.indices) window[i] =
-//            (0.42 - 0.5 * Math.cos(2 * Math.PI * i / (n - 1))
-//                    + 0.08 * Math.cos(4 * Math.PI * i / (n - 1)))
-//    }
-
-    /***************************************************************
-     * fft.c
-     * Douglas L. Jones
-     * University of Illinois at Urbana-Champaign
-     * January 19, 1992
-     * http://cnx.rice.edu/content/m12016/latest/
-     *
-     * fft: in-place radix-2 DIT DFT of a complex input
-     *
-     * input:
-     * n: length of FFT: must be a power of two
-     * m: n = 2**m
-     * input/output
-     * x: double array of length n with real part of data
-     * y: double array of length n with imag part of data
-     *
-     * Permission to copy and use this program is granted
-     * as long as this header is included.
-     */
-    fun fft(x: DoubleArray, y: DoubleArray) {
-        var i: Int
-        var j: Int
+    fun transform(real: DoubleArray, imagine: DoubleArray) {
         var k: Int
         var n1: Int
-        var n2: Int
-        var a: Int
         var c: Double
         var s: Double
-        var e: Double
-        var t1: Double
-        var t2: Double
+
         // Bit-reverse
-        j = 0
-        n2 = n / 2
-        i = 1
-        while (i < n - 1) {
+        var j = 0
+        val n2: Int = size / 2
+        for (i in 1 until size - 1) {
             n1 = n2
             while (j >= n1) {
                 j -= n1
@@ -331,58 +266,52 @@ class FFT(var n: Int) {
             }
             j += n1
             if (i < j) {
-                t1 = x[i]
-                x[i] = x[j]
-                x[j] = t1
-                t1 = y[i]
-                y[i] = y[j]
-                y[j] = t1
+                var temp = real[i]
+                real[i] = real[j]
+                real[j] = temp
+                temp = imagine[i]
+                imagine[i] = imagine[j]
+                imagine[j] = temp
             }
-            i++
         }
         // FFT
-        n1 = 0
-        n2 = 1
-        i = 0
-        while (i < m) {
-            n1 = n2
-            n2 += n2
-            a = 0
-            j = 0
-            while (j < n1) {
+        var index = 1
+
+        for (i in 0 until power) {
+            val ctr = index
+            index += index
+            var a = 0
+            for (l in 0 until ctr) {
                 c = cos[a]
                 s = sin[a]
-                a += 1 shl m - i - 1
-                k = j
-                while (k < n) {
-                    t1 = c * x[k + n1] - s * y[k + n1]
-                    t2 = s * x[k + n1] + c * y[k + n1]
-                    x[k + n1] = x[k] - t1
-                    y[k + n1] = y[k] - t2
-                    x[k] = x[k] + t1
-                    y[k] = y[k] + t2
-                    k += n2
+                a += 1 shl power - i - 1
+                k = l
+                while (k < size) {
+                    val temp = c * real[k + ctr] - s * imagine[k + ctr]
+                    val temp2 = s * real[k + ctr] + c * imagine[k + ctr]
+                    real[k + ctr] = real[k] - temp
+                    imagine[k + ctr] = imagine[k] - temp2
+                    real[k] = real[k] + temp
+                    imagine[k] = imagine[k] + temp2
+                    k += index
                 }
-                j++
             }
-            i++
         }
     }
 
     init {
-        m = (ln(n.toDouble()) / ln(2.0)).toInt()
         // Make sure n is a power of 2
-        if (n != 1 shl m) throw RuntimeException("FFT length must be power of 2")
+        if (size != 1 shl power) throw RuntimeException("FFT length must be power of 2")
         // precompute tables
-        cos = DoubleArray(n / 2)
-        sin = DoubleArray(n / 2)
-        for (i in 0 until n / 2) {
-            cos[i] = cos(-2 * Math.PI * i / n)
-            sin[i] = sin(-2 * Math.PI * i / n)
+        cos = DoubleArray(size / 2)
+        sin = DoubleArray(size / 2)
+        for (i in 0 until size / 2) {
+            cos[i] = cos(-2 * Math.PI * i / size)
+            sin[i] = sin(-2 * Math.PI * i / size)
         }
-        window = DoubleArray(n)
-        for (i in window.indices) window[i] =
-            (0.42 - 0.5 * cos(2 * Math.PI * i / (n - 1))
-                    + 0.08 * cos(4 * Math.PI * i / (n - 1)))
+        window = DoubleArray(size)
+        for (i in window.indices)
+            window[i] =
+                (0.42 - 0.5 * cos(2 * Math.PI * i / (size - 1)) + 0.08 * cos(4 * Math.PI * i / (size - 1)))
     }
 }
